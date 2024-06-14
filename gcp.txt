@@ -1,0 +1,474 @@
+create storage
+---------------
+gsutil mb -l $LOCATION gs://$DEVSHELL_PROJECT_ID
+
+gsutil cp my-excellent-blog.png gs://$DEVSHELL_PROJECT_ID/my-excellent-blog.png
+
+gsutil acl ch -u allUsers:R gs://$DEVSHELL_PROJECT_ID/my-excellent-blog.png
+
+enable cloud run API
+----------------------
+gcloud services enable run.googleapis.com
+
+gcloud config set compute/region us-central1
+
+LOCATION="us-central1"
+
+gcloud builds submit --tag gcr.io/$GOOGLE_CLOUD_PROJECT/helloworld
+
+gcloud container images list
+
+If the docker command cannot pull the remote container image then try running this :gcloud auth configure-docker
+
+gcloud run deploy --image gcr.io/$GOOGLE_CLOUD_PROJECT/helloworld --allow-unauthenticated --region=$LOCATION
+
+gcloud container images delete gcr.io/$GOOGLE_CLOUD_PROJECT/helloworld
+
+gcloud beta run services delete helloworld
+
+
+
+install java on machine per ssh
+--------------------------------
+sudo apt-get install -yq openjdk-11-jdk
+
+Apply workaround for certificate issue in OpenJDK 11:
+sudo sed -i 's/^\(keystore\.type\s*=\s*\).*$/\1jks/' /etc/java-11-openjdk/security/java.security; sudo rm /etc/ssl/certs/java/cacerts; sudo /usr/sbin/update-ca-certificates -f
+
+
+configure IP tables on machine per ssh
+--------------------------------------
+redirects requests on Port 80 to Port 8080 - the Java Web application listens on Port 8080.
+
+sudo iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 8080
+
+export project Id for GCP on machine
+------------------------------------
+export GCLOUD_PROJECT="$(curl -H Metadata-Flavor:Google http://metadata/computeMetadata/v1/project/project-id)"
+
+
+Datastore:
+-----------
+
+Note: Although you aren't using App Engine for your web application yet, Cloud Datastore requires you to create an App Engine application in your project.
+
+gcloud app create --region "us-central"
+
+
+
+
+Create a Cloud Storage bucket
+-------------------------------
+gsutil mb gs://$DEVSHELL_PROJECT_ID-media
+
+Enable the Cloud Run API and configure your Shell environment:
+----------------------------------------------------------------
+gcloud services enable run.googleapis.com
+
+
+gcloud config set compute/region us-central1
+
+LOCATION="us-central1"
+
+build your container image using Cloud Build by running the following command 
+ 
+gcloud builds submit --tag gcr.io/$GOOGLE_CLOUD_PROJECT/helloworld
+
+List all the container images associated with your current project using this command 
+
+gcloud container images list
+
+Deploy to Cloud Run
+--------------------
+
+gcloud run deploy --image gcr.io/$GOOGLE_CLOUD_PROJECT/helloworld --allow-unauthenticated --region=$LOCATION
+
+
+clean up
+
+gcloud container images delete gcr.io/$GOOGLE_CLOUD_PROJECT/helloworld
+
+
+Creating Application Containers with Google Cloud Buildpacks [APPRUN] 
+----------------------------------------------------------------------
+cd buildpack-samples/sample-java-mvn
+pack build --builder=gcr.io/buildpacks/builder sample-java-mvn
+
+docker run -it -e PORT=8080 -p 8080:8080 sample-java-mvn
+
+Build and run your sample App on Cloud Run
+
+gcloud beta run deploy --source .
+
+
+deploy a service on cloudrun
+---------------------------
+gcloud run deploy product-service \
+   --image gcr.io/qwiklabs-resources/product-status:0.0.1 \
+   --tag test1 \
+   --region $LOCATION \
+   --allow-unauthenticated 
+   
+   
+Add the product status service to an environment variable
+
+TEST1_PRODUCT_SERVICE_URL=$(gcloud run services describe product-service --platform managed --region us-central1 --format="value(status.address.url)")
+
+
+deploy an new revision
+
+gcloud run deploy product-service \
+  --image gcr.io/qwiklabs-resources/product-status:0.0.2 \
+  --no-traffic \
+  --tag test2 \
+  --region=$LOCATION \
+  --allow-unauthenticated
+  
+  
+Migrate 50% of the traffic to the revision tag test2
+
+gcloud run services update-traffic product-service \
+  --to-tags test2=50 \
+  --region=$LOCATION
+ 
+Migrate the distributed traffic back to the test1 service 
+  
+gcloud run services update-traffic product-service \
+  --to-tags test2=0 \
+  --region=$LOCATION
+  
+Output a list of the revisions deployed
+  
+gcloud run services describe product-service \
+  --region=$LOCATION \
+  --format='value(status.traffic.revisionName)'
+  
+  
+a list with revision names 
+
+LIST=$(gcloud run services describe product-service --platform=managed --region=$LOCATION --format='value[delimiter="=25,"](status.traffic.revisionName)')"=25"
+
+Split traffic between the four services using the LIST environment variable
+
+gcloud run services update-traffic product-service \
+  --to-revisions $LIST --region=$LOCATION
+  
+
+Reset the service traffic profile to use the latest deployment
+
+gcloud run services update-traffic product-service --to-latest --platform=managed --region=$LOCATION
+
+Authenticating service requests
+--------------------------------
+
+Delete the existing deployed Billing service:
+
+gcloud run services delete quickway-parking-billing-v1
+
+ reserve your static IP address:
+ ---------------------------------
+
+gcloud compute addresses create example-ip \
+    --ip-version=IPV4 \
+    --global
+	
+	
+display reserved IP 
+
+gcloud compute addresses describe example-ip \
+    --format="get(address)" \
+    --global
+	
+	
+Create the external HTTP load balancer
+--------------------------------------
+
+create a serverless NEG with a Cloud Run service
+
+gcloud compute network-endpoint-groups create myneg \
+   --region=$LOCATION \
+   --network-endpoint-type=serverless  \
+   --cloud-run-service=helloworld
+
+create backend service
+
+gcloud compute backend-services create mybackendservice \
+    --global
+
+
+add the serverless NEG as a backend to this backend service
+
+gcloud compute backend-services add-backend mybackendservice \
+    --global \
+    --network-endpoint-group=myneg \
+    --network-endpoint-group-region=$LOCATION
+	
+create a URL map to route incoming requests to the backend service
+
+gcloud compute url-maps create myurlmap \
+    --default-service mybackendservice
+	
+	
+create a target HTTP(S) proxy to route requests to your URL map
+
+gcloud compute target-http-proxies create mytargetproxy \
+    --url-map=myurlmap
+	
+Create a global forwarding rule to route incoming requests to the proxy
+
+gcloud compute forwarding-rules create myforwardingrule \
+    --address=example-ip \
+    --target-http-proxy=mytargetproxy \
+    --global \
+    --ports=80
+	
+	
+Configuring Egress from a Static Outbound IP Address 
+----------------------------------------------------
+Create a Subnetwork
+
+gcloud compute networks list
+
+gcloud compute networks subnets create mysubnet \
+--range=192.168.0.0/28 --network=default --region=$LOCATION
+
+
+Create a Serverless VPC Access connector
+-----------------------------------------
+Create a Serverless VPC Access connector named myconnector with your previously created subnetwork named mysubnet
+
+
+gcloud compute networks vpc-access connectors create myconnector \
+  --region=$LOCATION \
+  --subnet-project=$GOOGLE_CLOUD_PROJECT \
+  --subnet=mysubnet
+  
+Configure network address translation (NAT)
+-------------------------------------------
+Create a new Cloud Router to program your NAT gateway:
+
+gcloud compute routers create myrouter \
+  --network=default \
+  --region=$LOCATION
+  
+reserve IP address
+
+gcloud compute addresses create myoriginip --region=$LOCATION
+
+Bring all of the resources you've just made together to create a Cloud NAT gateway named mynat
+
+gcloud compute routers nats create mynat \
+  --router=myrouter \
+  --region=$LOCATION \
+  --nat-custom-subnet-ip-ranges=mysubnet \
+  --nat-external-ip-pool=myoriginip
+  
+Route Cloud Run traffic through the VPC network
+------------------------------------------------
+
+deploy your Cloud Run service with the Serverless VPC Access connector and set the VPC egress to route all traffic through the VPC network:
+
+gcloud run deploy sample-go \
+   --image=gcr.io/$GOOGLE_CLOUD_PROJECT/sample-go \
+   --vpc-connector=myconnector \
+   --vpc-egress=all-traffic
+   
+
+Cloud SQL with Cloud Run 
+---------------------------
+Connect to the Cloud SQL instance
+
+gcloud sql connect poll-database --user=postgres
+
+Set the environment variables for the Cloud SQL connection
+
+CLOUD_SQL_CONNECTION_NAME=$(gcloud sql instances describe poll-database --format='value(connectionName)')
+
+
+
+Create a Topic in Cloud Pub/Sub
+-------------------------------
+
+gcloud pubsub topics create ORDER_PLACED
+
+
+Create a new Service Account called "Order Initiator":
+
+gcloud iam service-accounts create pubsub-cloud-run-invoker \
+   --display-name "Order Initiator"
+   
+   
+Confirm the service account has been created:
+
+gcloud iam service-accounts list --filter="Order Initiator"
+
+Bind the service account to the order service:
+
+gcloud run services add-iam-policy-binding order-service \
+  --member=serviceAccount:pubsub-cloud-run-invoker@$GOOGLE_CLOUD_PROJECT.iam.gserviceaccount.com \
+  --role=roles/run.invoker --platform managed
+  
+Enable the project service account to create Tokens:
+
+gcloud projects add-iam-policy-binding $GOOGLE_CLOUD_PROJECT \
+   --member=serviceAccount:service-$PROJECT_NUMBER@gcp-sa-pubsub.iam.gserviceaccount.com \
+   --role=roles/iam.serviceAccountTokenCreator
+   
+   
+Creating a Cloud Pub/Sub Subscription
+----------------------------------------
+Create a subscription bound to the store service:
+
+gcloud pubsub subscriptions create order-service-sub \
+   --topic ORDER_PLACED \
+   --push-endpoint=$ORDER_SERVICE_URL \
+   --push-auth-service-account=pubsub-cloud-run-invoker@$GOOGLE_CLOUD_PROJECT.iam.gserviceaccount.com
+   
+Post a message to the store service:
+
+curl -X POST -H "Content-Type: application/json" -d @test.json $STORE_SERVICE_URL
+
+
+
+list all the zones in a given region:
+-------------------------------------
+gcloud compute zones list | grep $MY_REGION
+
+Set this zone to be your default zone
+--------------------------------------
+gcloud config set compute/zone $MY_ZONE
+
+Create a VM
+---------------
+gcloud compute instances create $MY_VMNAME \
+--machine-type "e2-standard-2" \
+--image-project "debian-cloud" \
+--image-family "debian-11" \
+--subnet "default"
+
+gcloud compute instances list
+
+gcloud command line to create a second service account
+------------------------------------------------------
+gcloud iam service-accounts create test-service-account2 --display-name "test-service-account2"
+
+grant the second service account the Project viewer role:
+
+gcloud projects add-iam-policy-binding $GOOGLE_CLOUD_PROJECT --member serviceAccount:test-service-account2@${GOOGLE_CLOUD_PROJECT}.iam.gserviceaccount.com --role roles/viewer
+
+Work with Cloud Storage in Cloud Shell
+--------------------------------------
+gsutil cp gs://cloud-training/ak8s/cat.jpg cat.jpg
+
+gsutil cp cat.jpg gs://$MY_BUCKET_NAME_1
+
+gsutil cp gs://$MY_BUCKET_NAME_1/cat.jpg gs://$MY_BUCKET_NAME_2/cat.jpg
+
+Set the access control list for a Cloud Storage object
+-------------------------------------------------------
+
+gsutil acl get gs://$MY_BUCKET_NAME_1/cat.jpg  > acl.txt
+
+change the object to have private access
+
+gsutil acl set private gs://$MY_BUCKET_NAME_1/cat.jpg
+
+Cloud Storage bucket readable by everyone
+
+gsutil iam ch allUsers:objectViewer gs://$MY_BUCKET_NAME_1
+
+Authenticate as a service account in Cloud Shell
+---------------------------------------------------
+gcloud config list
+
+gcloud auth activate-service-account --key-file credentials.json
+
+erify the list of authorized accounts in Cloud Shell
+
+gcloud auth list
+
+
+switch to another user
+----------------------
+gcloud config set account [USERNAME]
+
+
+build the Docker container image in Cloud Build:
+------------------------------------------------
+gcloud builds submit --tag gcr.io/${GOOGLE_CLOUD_PROJECT}/quickstart-image .
+
+***********
+steps:
+- name: 'gcr.io/cloud-builders/docker'
+  args: [ 'build', '-t', 'gcr.io/$PROJECT_ID/quickstart-image', '.' ]
+images:
+- 'gcr.io/$PROJECT_ID/quickstart-image'
+************
+start a Cloud Build using cloudbuild.yaml as the build configuration file:
+
+gcloud builds submit --config cloudbuild.yaml .
+
+
+Connect to the lab GKE cluster
+-------------------------------
+
+Configure kubectl tab completion in Cloud Shell:
+
+source <(kubectl completion bash)
+
+configure access to your cluster for the kubectl command-line tool
+
+gcloud container clusters get-credentials $my_cluster --zone $my_zone
+
+invoking the service as an authorized user:
+---------------------------------------------
+
+curl -X POST -H "Authorization: Bearer $(gcloud auth print-identity-token)" $SERVICE_URL
+
+Cloud Storage to send a Pub/Sub notification whenever a new file has finished uploading to the docs bucket:
+--------------------------------------------------------------------------------------------------------------
+gsutil notification create -t new-doc -f json -e OBJECT_FINALIZE gs://$GOOGLE_CLOUD_PROJECT-upload
+
+gcloud iam service-accounts create pubsub-cloud-run-invoker --display-name "PubSub Cloud Run Invoker"
+
+gcloud beta run services add-iam-policy-binding pdf-converter --member=serviceAccount:pubsub-cloud-run-invoker@$GOOGLE_CLOUD_PROJECT.iam.gserviceaccount.com --role=roles/run.invoker --platform managed --region us-east1
+
+enable your project to create Cloud Pub/Sub authentication tokens:
+gcloud projects add-iam-policy-binding $GOOGLE_CLOUD_PROJECT --member=serviceAccount:service-$PROJECT_NUMBER@gcp-sa-pubsub.iam.gserviceaccount.com --role=roles/iam.serviceAccountTokenCreator
+
+create a Pub/Sub subscription so that the PDF converter can run whenever a message is published on the topic "new-doc".
+gcloud beta pubsub subscriptions create pdf-conv-sub --topic new-doc --push-endpoint=$SERVICE_URL --push-auth-service-account=pubsub-cloud-run-invoker@$GOOGLE_CLOUD_PROJECT.iam.gserviceaccount.com
+
+
+
+
+Run these commands to build the container and to deploy it:
+------------------------------------------------------------
+
+gcloud run deploy pdf-converter \
+  --image gcr.io/$GOOGLE_CLOUD_PROJECT/pdf-converter \
+  --platform managed \
+  --region us-east1 \
+  --memory=2Gi \
+  --no-allow-unauthenticated \
+  --set-env-vars PDF_BUCKET=$GOOGLE_CLOUD_PROJECT-processed \
+  --max-instances=3
+
+
+--------------------------------------------------------------
+
+Create a Pub/Sub notification to indicate a new file has been uploaded to the docs bucket ("uploaded"). The notifications will be labeled with the topic "new-doc".
+gsutil notification create -t new-doc -f json -e OBJECT_FINALIZE gs://$GOOGLE_CLOUD_PROJECT-upload
+
+Create a new service account to trigger the Cloud Run services:
+gcloud iam service-accounts create pubsub-cloud-run-invoker --display-name "PubSub Cloud Run Invoker"
+
+Give the service account permission to invoke the PDF converter service:
+gcloud run services add-iam-policy-binding pdf-converter \
+  --member=serviceAccount:pubsub-cloud-run-invoker@$GOOGLE_CLOUD_PROJECT.iam.gserviceaccount.com \
+  --role=roles/run.invoker \
+  --region us-east1 \
+  --platform managed
+
+
+
