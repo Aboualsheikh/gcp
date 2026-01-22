@@ -28,7 +28,7 @@ else
 fi
 
 # Test 4: Check if gcp.txt contains GCP commands
-if grep -q "gcloud" gcp.txt; then
+if grep -q "\bgcloud\b" gcp.txt; then
     echo "✓ gcp.txt contains gcloud commands"
 else
     echo "✗ gcp.txt does not contain gcloud commands"
